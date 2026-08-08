@@ -1,0 +1,35 @@
+name: Build macOS app
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install customtkinter openpyxl reportlab pillow pyinstaller
+
+      - name: Make build script executable
+        run: chmod +x sfx-crm/build_mac.sh
+
+      - name: Run build
+        run: cd sfx-crm && ./build_mac.sh
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: SFX-CRM-Mac
+          path: sfx-crm/installer/*.dmg
