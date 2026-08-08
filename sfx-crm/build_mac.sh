@@ -6,6 +6,11 @@ PY=python3
 
 $PY -m pip install --upgrade customtkinter openpyxl reportlab pillow pyinstaller
 
+# ПЕРЕСБОРКА PILLOW ИЗ ИСХОДНОГО КОДА КАК UNIVERSAL2
+$PY -m pip install --force-reinstall --no-binary :all: pillow
+
+# ... (остальная часть скрипта без изменений) ...
+
 if [ -f assets/icon.png ]; then
     rm -rf build/icon.iconset
     mkdir -p build/icon.iconset
