@@ -6,7 +6,6 @@ PY=python3
 
 $PY -m pip install --upgrade customtkinter openpyxl reportlab pillow pyinstaller
 
-# Генерируем .icns из assets/icon.png (если есть)
 if [ -f assets/icon.png ]; then
     rm -rf build/icon.iconset
     mkdir -p build/icon.iconset
@@ -19,7 +18,8 @@ fi
 
 $PY -m PyInstaller --noconfirm --clean --windowed --name "SFX CRM" \
     --icon assets/icon.icns --collect-all customtkinter \
-    --add-data "assets:assets" --osx-bundle-identifier ru.bisquare.sfxcrm app.py
+    --add-data "assets:assets" --osx-bundle-identifier ru.bisquare.sfxcrm \
+    --target-architecture universal2 app.py
 
 rm -rf build/dmg "installer/SFX-CRM-3.0.0.dmg"
 mkdir -p build/dmg installer
@@ -28,4 +28,4 @@ ln -s /Applications build/dmg/Applications
 hdiutil create -volname "SFX CRM" -srcfolder build/dmg -ov -format UDZO \
     "installer/SFX-CRM-3.0.0.dmg"
 
-echo "Готово: installer/SFX-CRM-3.0.0.dmg"
+echo "Готово: installer/SFX-CRM-3.0.0.dmg (universal2)"
