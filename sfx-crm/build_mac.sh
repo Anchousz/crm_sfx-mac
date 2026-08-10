@@ -1,14 +1,14 @@
 #!/bin/bash
+# Сборка SFX CRM под macOS: .app + .dmg
 set -e
 cd "$(dirname "$0")"
 
 PY=python3
 
+# Убедимся, что зависимости установлены
 $PY -m pip install --upgrade customtkinter openpyxl reportlab pillow pyinstaller
 
-# ПЕРЕСБОРКА PILLOW ИЗ ИСХОДНОГО КОДА КАК UNIVERSAL2
-$PY -m pip install --force-reinstall --no-binary :all: pillow
-
+# Генерируем .icns из assets/icon.png (если есть)
 if [ -f assets/icon.png ]; then
     rm -rf build/icon.iconset
     mkdir -p build/icon.iconset
@@ -19,11 +19,13 @@ if [ -f assets/icon.png ]; then
     iconutil -c icns build/icon.iconset -o assets/icon.icns 2>/dev/null || true
 fi
 
+# Сборка .app
 $PY -m PyInstaller --noconfirm --clean --windowed --name "SFX CRM" \
     --icon assets/icon.icns --collect-all customtkinter \
-    --add-data "assets:assets" --osx-bundle-identifier ru.bisquare.sfxcrm \
-    --target-architecture universal2 app.py
+    --collect-all reportlab --collect-all openpyxl --collect-all PIL \
+    --add-data "assets:assets" --osx-bundle-identifier ru.bisquare.sfxcrm app.py
 
+# Создание .dmg
 rm -rf build/dmg "installer/SFX-CRM-3.0.0.dmg"
 mkdir -p build/dmg installer
 cp -R "dist/SFX CRM.app" build/dmg/
@@ -31,4 +33,4 @@ ln -s /Applications build/dmg/Applications
 hdiutil create -volname "SFX CRM" -srcfolder build/dmg -ov -format UDZO \
     "installer/SFX-CRM-3.0.0.dmg"
 
-echo "Готово: installer/SFX-CRM-3.0.0.dmg (universal2)"
+echo "Готово: installer/SFX-CRM-3.0.0.dmg"
