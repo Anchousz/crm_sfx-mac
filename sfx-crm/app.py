@@ -8,29 +8,33 @@ import sys
 import traceback
 from datetime import datetime
 
-import customtkinter as ctk
 
-import db
-import paths
-from theme import (ACCENT, BG, CARD, CARD_HOVER, MUTED, PANEL, TEXT, UI_FONT,
-                   install_smooth_scroll)
-from views import (CalendarView, CatalogView, EstimateView, ProjectsView,
-                   SettingsView)
+def _crash_log_path():
+    """Не зависит от paths/db — работает, даже если сами эти модули не импортировались."""
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support/SFX CRM")
+    elif os.environ.get("APPDATA"):
+        base = os.path.join(os.environ["APPDATA"], "SFX CRM")
+    else:
+        base = os.path.expanduser("~/.sfx-crm")
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, "crash.log")
 
-ctk.set_appearance_mode("dark")
 
-VERSION = "3.0"
-
-
-def _report_crash(exc_type, exc, tb):
-    """В собранном exe нет консоли — пишем в crash.log и показываем окно."""
-    text = "".join(traceback.format_exception(exc_type, exc, tb))
-    log = os.path.join(paths.data_dir(), "crash.log")
+def _log_crash(text):
+    log = _crash_log_path()
     try:
         with open(log, "a", encoding="utf-8") as f:
             f.write(f"\n--- {datetime.now():%Y-%m-%d %H:%M:%S} ---\n{text}")
     except OSError:
         pass
+    return log
+
+
+def _report_crash(exc_type, exc, tb):
+    """В собранном exe нет консоли — пишем в crash.log и показываем окно."""
+    text = "".join(traceback.format_exception(exc_type, exc, tb))
+    log = _log_crash(text)
     try:
         from tkinter import messagebox
         messagebox.showerror(
@@ -41,6 +45,25 @@ def _report_crash(exc_type, exc, tb):
 
 
 sys.excepthook = _report_crash
+
+try:
+    import customtkinter as ctk
+
+    import db
+    import paths
+    from theme import (ACCENT, BG, CARD, CARD_HOVER, MUTED, PANEL, TEXT, UI_FONT,
+                       install_smooth_scroll)
+    from views import (CalendarView, CatalogView, EstimateView, ProjectsView,
+                       SettingsView)
+except Exception:
+    # Импорт мог упасть ДО того, как sys.excepthook вызовется для верхнего уровня
+    # (в замороженном .app эта ошибка иначе просто теряется без единого следа).
+    _report_crash(*sys.exc_info())
+    raise
+
+ctk.set_appearance_mode("dark")
+
+VERSION = "3.0"
 
 NAV = [("estimate", "Смета"),
        ("projects", "Проекты"),
