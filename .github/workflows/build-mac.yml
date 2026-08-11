@@ -7,11 +7,11 @@ on:
 
 jobs:
   build:
-    # macos-latest сейчас = arm64-only раннер, PyInstaller соберёт бинарник
-    # только под Apple Silicon, и он не запустится на Intel Mac (мгновенный
-    # выход при старте). macos-13 — Intel-раннер: x86_64-сборка работает
-    # нативно на Intel и через Rosetta 2 на Apple Silicon — совместимость шире.
-    runs-on: macos-13
+    # macos-13 (Intel) выведен из эксплуатации GitHub в декабре 2025 —
+    # job с этим лейблом висит вечно в очереди и никогда не стартует.
+    # macos-15-intel — последний доступный бесплатный x86_64-раннер (до 08/2027):
+    # x86_64-сборка работает нативно на Intel и через Rosetta 2 на Apple Silicon.
+    runs-on: macos-15-intel
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
