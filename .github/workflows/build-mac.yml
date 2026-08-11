@@ -7,11 +7,15 @@ on:
 
 jobs:
   build:
-    # macos-13 (Intel) выведен из эксплуатации GitHub в декабре 2025 —
-    # job с этим лейблом висит вечно в очереди и никогда не стартует.
+    # macos-13 (Intel) выведен из эксплуатации GitHub в декабре 2025.
     # macos-15-intel — последний доступный бесплатный x86_64-раннер (до 08/2027):
     # x86_64-сборка работает нативно на Intel и через Rosetta 2 на Apple Silicon.
     runs-on: macos-15-intel
+    # Файлы проекта (build_mac.sh, app.py, ...) лежат не в корне репозитория,
+    # а в подпапке sfx-crm/ — все run-шаги должны выполняться из неё.
+    defaults:
+      run:
+        working-directory: sfx-crm
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -36,4 +40,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SFX-CRM-Mac
-          path: installer/SFX-CRM-*.dmg
+          path: sfx-crm/installer/SFX-CRM-*.dmg
