@@ -90,16 +90,14 @@ class FastList(ctk.CTkFrame):
                 c.create_text(PAD_X + 4, y + 14, text=row["header"],
                               anchor="w", font=self.f_head,
                               fill=row.get("color", MUTED))
+                specs, _ = self._button_slots(row.get("buttons", []), w)
+                zones = self._paint_buttons(specs, y, 30)
+                if zones:
+                    # без подложки — заголовок не подсвечивается при наведении
+                    self._geom.append((y, y + 30, row, None, zones))
                 y += 30
                 continue
-            btns = row.get("buttons", [])
-            bx = w - PAD_X - 6
-            zones = []
-            btn_specs = []
-            for b in btns:
-                x2, x1 = bx, bx - BTN_W
-                btn_specs.append((x1, x2, b))
-                bx = x1 - 4
+            btn_specs, bx = self._button_slots(row.get("buttons", []), w)
             text_w = max(bx - PAD_X - IN_X - 8, 60)
 
             title_font = self.f_title_b if row.get("bold") else self.f_title
@@ -121,15 +119,7 @@ class FastList(ctk.CTkFrame):
                         fill=CARD, outline="")
             c.tag_lower(bg)
 
-            for x1, x2, b in btn_specs:
-                by1 = y + (row_h - BTN_H) / 2
-                by2 = by1 + BTN_H
-                if b.get("fill"):
-                    _rrect(c, x1, by1, x2, by2, 6, fill=b["fill"], outline="")
-                c.create_text((x1 + x2) / 2, (by1 + by2) / 2, text=b["text"],
-                              font=self.f_btn, fill=b.get("text_color", TEXT))
-                zones.append((x1, by1, x2, by2, b["cb"]))
-
+            zones = self._paint_buttons(btn_specs, y, row_h)
             self._geom.append((y, y2, row, bg, zones))
             y = y2 + ROW_GAP
 
@@ -140,6 +130,28 @@ class FastList(ctk.CTkFrame):
         c.configure(scrollregion=(0, 0, w, y + 4))
         self._repaint_fills()
 
+    def _button_slots(self, buttons, w):
+        """Раскладывает кнопки справа налево. Отдаёт спеки и левую границу."""
+        bx = w - PAD_X - 6
+        specs = []
+        for b in buttons:
+            x1 = bx - BTN_W
+            specs.append((x1, bx, b))
+            bx = x1 - 4
+        return specs, bx
+
+    def _paint_buttons(self, specs, y, height):
+        zones = []
+        for x1, x2, b in specs:
+            by1 = y + (height - BTN_H) / 2
+            by2 = by1 + BTN_H
+            if b.get("fill"):
+                _rrect(self.canvas, x1, by1, x2, by2, 6, fill=b["fill"], outline="")
+            self.canvas.create_text((x1 + x2) / 2, (by1 + by2) / 2, text=b["text"],
+                                    font=self.f_btn, fill=b.get("text_color", TEXT))
+            zones.append((x1, by1, x2, by2, b["cb"]))
+        return zones
+
     def _fill_for(self, row, hovered):
         if row.get("key") is not None and row["key"] == self.selected_key:
             return CARD_HOVER
@@ -147,6 +159,8 @@ class FastList(ctk.CTkFrame):
 
     def _repaint_fills(self):
         for i, (_y1, _y2, row, bg, _z) in enumerate(self._geom):
+            if bg is None:  # заголовок категории — подложки нет
+                continue
             self.canvas.itemconfig(bg, fill=self._fill_for(row, i == self._hover))
 
     def _row_at(self, y_canvas):
@@ -162,6 +176,8 @@ class FastList(ctk.CTkFrame):
         for idx in (old, i):
             if idx is not None and idx < len(self._geom):
                 _y1, _y2, row, bg, _z = self._geom[idx]
+                if bg is None:
+                    continue
                 self.canvas.itemconfig(bg, fill=self._fill_for(row, idx == self._hover))
 
     def _on_motion(self, e):

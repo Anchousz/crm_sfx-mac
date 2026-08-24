@@ -11,7 +11,8 @@ import db
 import excel_io
 import paths
 import pdf_io
-from dialogs import AddDayDialog, OvertimeDialog, SavePresetDialog
+from dialogs import (AddDayDialog, CategoryDialog, ItemDialog, OvertimeDialog,
+                     SavePresetDialog)
 from excel_io import parse_date
 from fastlist import FastList
 from theme import (ACCENT, ACCENT_DIM, CARD, CARD_HOVER, GREEN, MUTED, PANEL,
@@ -103,6 +104,10 @@ class EstimateView(ctk.CTkFrame):
         head.pack(fill="x", padx=14, pady=(12, 6))
         ctk.CTkLabel(head, text="Каталог позиций", font=(UI_FONT, 15, "bold"),
                      text_color=TEXT).pack(side="left")
+        ctk.CTkButton(head, text="+ позиция", fg_color=CARD,
+                      hover_color=CARD_HOVER, text_color=ACCENT, width=96,
+                      height=26, font=(UI_FONT, 12),
+                      command=self.new_catalog_item).pack(side="right")
         self.search = ctk.CTkEntry(panel, fg_color=CARD, border_color=CARD,
                                    placeholder_text="Поиск…", font=(UI_FONT, 13))
         self.search.pack(fill="x", padx=14, pady=(0, 8))
@@ -120,7 +125,8 @@ class EstimateView(ctk.CTkFrame):
         rows = []
         self.cat_list.empty_text = (
             "Ничего не найдено" if query else
-            "Каталог пуст — импортируйте прайс\nв разделе «Каталог и цены»")
+            "Каталог пуст — нажмите «+ позиция» вверху,\n"
+            "чтобы завести её вручную")
 
         presets = [p for p in db.list_presets()
                    if not query or query in p["name"].lower()]
@@ -153,6 +159,23 @@ class EstimateView(ctk.CTkFrame):
                     "buttons": [{"text": "+", "fill": ACCENT,
                                  "text_color": "#ffffff", "cb": add}]})
         self.cat_list.set_rows(rows, keep_scroll=keep_scroll)
+
+    def new_catalog_item(self):
+        """Завести позицию каталога, не уходя со сметы — сразу ставим её в день."""
+        cats = [c[1] for c in db.list_categories()]
+        dlg = ItemDialog(self.app, cats, self._save_catalog_item)
+        self.app.wait_window(dlg)
+        self.refresh_catalog(keep_scroll=True)
+        self.app.catalog_view.refresh(keep_scroll=True)
+
+    def _save_catalog_item(self, data):
+        cid = db.find_or_create_category(data["category"])
+        if db.item_exists(cid, data["name"]):
+            return f"«{data['name']}» уже есть в этой категории"
+        db.add_item(cid, data["name"], data["price"], data["unit"], data["stock"])
+        if self.current >= 0:
+            self.add_line(data["name"], data["price"], data["unit"])
+        return None
 
     def _build_days(self, body):
         panel = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=12)
@@ -720,6 +743,8 @@ class CalendarView(ctk.CTkFrame):
 
 
 class CatalogView(ctk.CTkFrame):
+    HINT = "кликните позицию в списке, чтобы править"
+
     def __init__(self, master, app):
         super().__init__(master, fg_color="transparent")
         self.app = app
@@ -731,10 +756,18 @@ class CatalogView(ctk.CTkFrame):
         row1.pack(fill="x", padx=12, pady=(10, 2))
         ctk.CTkLabel(row1, text="Каталог и цены", font=(UI_FONT, 15, "bold"),
                      text_color=TEXT).pack(side="left", padx=4)
-        ctk.CTkButton(row1, text="Импорт прайса из Excel", fg_color=CARD,
+        ctk.CTkButton(row1, text="+ Позиция", fg_color=ACCENT,
+                      hover_color=ACCENT_DIM, height=32, width=110,
+                      font=(UI_FONT, 13, "bold"),
+                      command=self._add_item).pack(side="right", padx=4)
+        ctk.CTkButton(row1, text="+ Категория", fg_color=CARD,
+                      hover_color=CARD_HOVER, height=32, width=110,
+                      font=(UI_FONT, 12),
+                      command=self._add_category).pack(side="right", padx=4)
+        ctk.CTkButton(row1, text="Импорт из Excel", fg_color=CARD,
                       hover_color=CARD_HOVER, height=32, font=(UI_FONT, 12),
                       command=self._import).pack(side="right", padx=4)
-        self.cat_search = ctk.CTkEntry(row1, width=220, fg_color=CARD,
+        self.cat_search = ctk.CTkEntry(row1, width=200, fg_color=CARD,
                                        border_color=CARD, font=(UI_FONT, 13),
                                        placeholder_text="Поиск…")
         self.cat_search.pack(side="right", padx=8)
@@ -742,9 +775,12 @@ class CatalogView(ctk.CTkFrame):
 
         row2 = ctk.CTkFrame(head, fg_color="transparent")
         row2.pack(fill="x", padx=12, pady=(4, 10))
-        self.sel_lbl = ctk.CTkLabel(row2, text="кликните позицию в списке, чтобы править",
+        self.sel_lbl = ctk.CTkLabel(row2, text=self.HINT,
                                     text_color=MUTED, font=(UI_FONT, 13), anchor="w")
         self.sel_lbl.pack(side="left", padx=4, fill="x", expand=True)
+        ctk.CTkButton(row2, text="Правка", fg_color=CARD, hover_color=CARD_HOVER,
+                      width=80, height=28, font=(UI_FONT, 12),
+                      command=self._edit_item).pack(side="left", padx=(4, 8))
         ctk.CTkLabel(row2, text="Цена", text_color=MUTED,
                      font=(UI_FONT, 12)).pack(side="left", padx=(8, 4))
         self.price_entry = ctk.CTkEntry(row2, width=90, fg_color=CARD,
@@ -767,24 +803,51 @@ class CatalogView(ctk.CTkFrame):
         self.stock_entry.pack(side="left", padx=(0, 4))
         self.stock_entry.bind("<KeyRelease>", lambda e: self._on_edit())
 
-        self.list = FastList(self, empty_text="Каталог пуст — импортируйте прайс")
+        self.list = FastList(
+            self, empty_text="Каталог пуст — нажмите «+ Позиция», чтобы завести\n"
+                             "первую позицию вручную, или импортируйте прайс из Excel")
         self.list.pack(fill="both", expand=True)
         self.refresh()
 
     def refresh(self, keep_scroll=False):
         query = self.cat_search.get().strip().lower() if hasattr(self, "cat_search") else ""
         rows = []
-        for _cid, cname, items in db.list_catalog():
+        for cid, cname, items in db.list_catalog():
             shown = [it for it in items if not query or query in it[1].lower()]
-            if not shown:
+            if not shown and query:
                 continue
-            rows.append({"header": cname.upper(), "color": ACCENT})
+            rows.append({
+                "header": cname.upper(), "color": ACCENT,
+                "buttons": [
+                    {"text": "✕", "text_color": MUTED,
+                     "cb": lambda i=cid, n=cname: self._delete_category(i, n)},
+                    # «…» — не эмодзи: рисуется шрифтом интерфейса на обеих ОС
+                    {"text": "…", "text_color": MUTED,
+                     "cb": lambda i=cid, n=cname: self._rename_category(i, n)},
+                    {"text": "+", "text_color": ACCENT,
+                     "cb": lambda n=cname: self._add_item(n)},
+                ]})
+            if not shown:
+                rows.append({
+                    "title": "категория пуста",
+                    "title_color": MUTED,
+                    "sub": "нажмите «+» справа от названия, чтобы добавить позицию",
+                    "on_click": lambda n=cname: self._add_item(n)})
+                continue
             for iid, name, price, unit, stk in shown:
                 sub = f"{fmt_money(price)}/{unit}"
                 sub += f" · склад: {fmt_qty(stk)}" if stk is not None else " · склад не отслеживается"
                 rows.append({"title": name, "sub": sub, "key": iid,
-                             "on_click": lambda i=iid, n=name: self._select(i, n)})
+                             "on_click": lambda i=iid, n=name: self._select(i, n),
+                             "buttons": [
+                                 {"text": "✕", "text_color": MUTED,
+                                  "cb": lambda i=iid, n=name: self._delete_item(i, n)}]})
         self.list.set_rows(rows, keep_scroll=keep_scroll)
+
+    def _reload(self):
+        """Каталог правится в двух местах — обновляем оба списка."""
+        self.refresh(keep_scroll=True)
+        self.app.estimate_view.refresh_catalog(keep_scroll=True)
 
     def _select(self, iid, name):
         self.sel = iid
@@ -801,6 +864,81 @@ class CatalogView(ctk.CTkFrame):
         self.stock_entry.delete(0, "end")
         if stk is not None:
             self.stock_entry.insert(0, fmt_qty(stk))
+
+    def _clear_selection(self):
+        self.sel = None
+        self.list.select(None)
+        self.sel_lbl.configure(text=self.HINT, text_color=MUTED)
+        self.price_entry.delete(0, "end")
+        self.stock_entry.delete(0, "end")
+
+    def _add_category(self):
+        dlg = CategoryDialog(self.app)
+        self.app.wait_window(dlg)
+        if dlg.result:
+            db.find_or_create_category(dlg.result)
+            self._reload()
+
+    def _rename_category(self, cid, name):
+        dlg = CategoryDialog(self.app, name)
+        self.app.wait_window(dlg)
+        if dlg.result and dlg.result != name:
+            db.rename_category(cid, dlg.result)
+            self._reload()
+
+    def _delete_category(self, cid, name):
+        count = db.category_item_count(cid)
+        msg = f"Удалить категорию «{name}»?"
+        if count:
+            msg += f"\n\nВместе с ней удалятся позиции: {count} шт."
+        if messagebox.askyesno("Удаление", msg):
+            db.delete_category(cid)
+            self._clear_selection()
+            self._reload()
+
+    def _add_item(self, category=""):
+        cats = [c[1] for c in db.list_categories()]
+        dlg = ItemDialog(self.app, cats, self._save_new_item,
+                         default_category=category)
+        self.app.wait_window(dlg)
+        self._reload()
+
+    def _save_new_item(self, data):
+        cid = db.find_or_create_category(data["category"])
+        if db.item_exists(cid, data["name"]):
+            return f"«{data['name']}» уже есть в этой категории"
+        db.add_item(cid, data["name"], data["price"], data["unit"], data["stock"])
+        return None
+
+    def _edit_item(self):
+        if self.sel is None:
+            messagebox.showinfo("Каталог", "Сначала выберите позицию в списке.")
+            return
+        item = db.get_item(self.sel)
+        if not item:
+            return
+        cats = [c[1] for c in db.list_categories()]
+        dlg = ItemDialog(self.app, cats, self._save_edited_item, item=item)
+        self.app.wait_window(dlg)
+        if dlg.result:
+            self.sel_lbl.configure(text=dlg.result["name"], text_color=TEXT)
+        self._reload()
+
+    def _save_edited_item(self, data):
+        cid = db.find_or_create_category(data["category"])
+        if db.item_exists(cid, data["name"], exclude_id=self.sel):
+            return f"«{data['name']}» уже есть в этой категории"
+        db.update_item(self.sel, name=data["name"], price=data["price"],
+                       unit=data["unit"], stock=data["stock"], category_id=cid)
+        return None
+
+    def _delete_item(self, iid, name):
+        if not messagebox.askyesno("Удаление", f"Удалить позицию «{name}»?"):
+            return
+        db.delete_item(iid)
+        if self.sel == iid:
+            self._clear_selection()
+        self._reload()
 
     def _on_edit(self):
         if self.sel is None:
@@ -820,17 +958,32 @@ class CatalogView(ctk.CTkFrame):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
         if not path:
             return
-        if not messagebox.askyesno("Импорт", "Текущий каталог будет заменён данными из файла. Продолжить?"):
+        merge = messagebox.askyesnocancel(
+            "Импорт прайса",
+            "Добавить позиции из файла к текущему каталогу?\n\n"
+            "Да — добавить (свои позиции останутся)\n"
+            "Нет — заменить каталог целиком\n"
+            "Отмена — ничего не делать")
+        if merge is None:
             return
         data = excel_io.import_prices(path)
-        db.clear_catalog()
+        added = skipped = 0
+        if not merge:
+            db.clear_catalog()
         for cat, items in data:
-            cid = db.add_category(cat)
+            cid = db.find_or_create_category(cat) if merge else db.add_category(cat)
             for name, price, unit in items:
+                if merge and db.item_exists(cid, name):
+                    skipped += 1
+                    continue
                 db.add_item(cid, name, price, unit)
-        self.refresh()
-        self.app.estimate_view.refresh_catalog()
-        messagebox.showinfo("Импорт", f"Загружено категорий: {len(data)}")
+                added += 1
+        self._clear_selection()
+        self._reload()
+        report = f"Категорий: {len(data)}, позиций добавлено: {added}"
+        if skipped:
+            report += f"\nПропущено (уже были в каталоге): {skipped}"
+        messagebox.showinfo("Импорт", report)
 
 
 class SettingsView(ctk.CTkFrame):

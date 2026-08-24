@@ -110,6 +110,63 @@ def add_category(name):
         return cur.lastrowid
 
 
+def list_categories():
+    with connect() as con:
+        return con.execute(
+            "SELECT id, name FROM categories ORDER BY sort, id").fetchall()
+
+
+def find_or_create_category(name):
+    """id категории по имени (без учёта регистра); создаёт, если такой нет.
+
+    Сравниваем в Python: lower() в SQLite умеет только латиницу.
+    """
+    name = name.strip()
+    key = name.casefold()
+    for cid, cname in list_categories():
+        if cname.strip().casefold() == key:
+            return cid
+    return add_category(name)
+
+
+def rename_category(category_id, name):
+    with connect() as con:
+        con.execute("UPDATE categories SET name=? WHERE id=?", (name.strip(), category_id))
+
+
+def delete_category(category_id):
+    with connect() as con:
+        con.execute("DELETE FROM categories WHERE id=?", (category_id,))
+
+
+def category_item_count(category_id):
+    with connect() as con:
+        return con.execute("SELECT COUNT(*) FROM items WHERE category_id=?",
+                           (category_id,)).fetchone()[0]
+
+
+def item_exists(category_id, name, exclude_id=None):
+    """Есть ли в категории позиция с таким именем (регистр не важен)."""
+    key = name.strip().casefold()
+    with connect() as con:
+        rows = con.execute("SELECT id, name FROM items WHERE category_id=?",
+                           (category_id,)).fetchall()
+    return any(iid != exclude_id and iname.strip().casefold() == key
+               for iid, iname in rows)
+
+
+def get_item(item_id):
+    with connect() as con:
+        row = con.execute(
+            "SELECT i.name, i.price, i.unit, i.stock, c.name "
+            "FROM items i JOIN categories c ON c.id=i.category_id "
+            "WHERE i.id=?", (item_id,)).fetchone()
+    if not row:
+        return None
+    return {"name": row[0], "price": row[1], "unit": row[2],
+            "stock": row[3], "category": row[4]}
+
+
 def add_item(category_id, name, price, unit="шт", stock=None):
     with connect() as con:
         cur = con.execute(
@@ -121,7 +178,7 @@ def add_item(category_id, name, price, unit="шт", stock=None):
 
 
 def update_item(item_id, **fields):
-    allowed = {"name", "price", "unit", "stock"}
+    allowed = {"name", "price", "unit", "stock", "category_id"}
     sets = {k: v for k, v in fields.items() if k in allowed}
     if not sets:
         return
