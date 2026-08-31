@@ -50,3 +50,16 @@ def logo_path():
         if os.path.exists(p):
             return p
     return None
+
+
+def logo_file():
+    """Куда «Настройки» кладут выбранный пользователем логотип."""
+    return os.path.join(data_dir(), "logo.png")
+
+
+def remove_logo():
+    """Убирает логотип из всех мест, где его ищет logo_path()."""
+    for base in (data_dir(), app_dir()):
+        p = os.path.join(base, "logo.png")
+        if os.path.exists(p):
+            os.remove(p)

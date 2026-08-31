@@ -23,6 +23,9 @@ MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май"
           "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
+PREVIEW_W, PREVIEW_H = 260, 70   # размер картинки логотипа в настройках
+MAX_LOGO_H = 400                 # во что ужимаем исходник при сохранении
+
 
 class EstimateView(ctk.CTkFrame):
     def __init__(self, master, app):
@@ -108,13 +111,29 @@ class EstimateView(ctk.CTkFrame):
                       hover_color=CARD_HOVER, text_color=ACCENT, width=96,
                       height=26, font=(UI_FONT, 12),
                       command=self.new_catalog_item).pack(side="right")
+        self.cat_toggle = ctk.CTkButton(head, text="свернуть все", width=104, height=26,
+                                        fg_color=CARD, hover_color=CARD_HOVER,
+                                        text_color=MUTED, font=(UI_FONT, 11),
+                                        command=self._toggle_all_categories)
+        self.cat_toggle.pack(side="right", padx=(0, 6))
         self.search = ctk.CTkEntry(panel, fg_color=CARD, border_color=CARD,
                                    placeholder_text="Поиск…", font=(UI_FONT, 13))
         self.search.pack(fill="x", padx=14, pady=(0, 8))
         self.search.bind("<KeyRelease>", lambda e: self.refresh_catalog())
-        self.cat_list = FastList(panel, empty_text="Ничего не найдено")
+        self.cat_list = FastList(panel, empty_text="Ничего не найдено",
+                                 on_collapse=self._sync_cat_toggle)
         self.cat_list.pack(fill="both", expand=True, padx=6, pady=(0, 8))
         self.refresh_catalog()
+
+    def _toggle_all_categories(self):
+        self.cat_list.set_all_collapsed(not self.cat_list.all_collapsed())
+
+    def _sync_cat_toggle(self):
+        searching = bool(self.search.get().strip())
+        collapsed = self.cat_list.all_collapsed() and not searching
+        self.cat_toggle.configure(
+            state="disabled" if searching else "normal",
+            text="развернуть все" if collapsed else "свернуть все")
 
     def on_show(self):
         self.refresh_catalog(keep_scroll=True)
@@ -131,7 +150,8 @@ class EstimateView(ctk.CTkFrame):
         presets = [p for p in db.list_presets()
                    if not query or query in p["name"].lower()]
         if presets:
-            rows.append({"header": "КОМПЛЕКТЫ", "color": YELLOW})
+            rows.append({"header": "КОМПЛЕКТЫ", "color": YELLOW,
+                         "key": "presets", "count": len(presets)})
             for p in presets:
                 rows.append({
                     "title": p["name"], "bold": True,
@@ -144,11 +164,12 @@ class EstimateView(ctk.CTkFrame):
                          "cb": lambda p=p: self.delete_preset(p)},
                     ]})
 
-        for _cid, cname, items in db.list_catalog():
+        for cid, cname, items in db.list_catalog():
             shown = [it for it in items if not query or query in it[1].lower()]
             if not shown:
                 continue
-            rows.append({"header": cname.upper(), "color": ACCENT})
+            rows.append({"header": cname.upper(), "color": ACCENT,
+                         "key": ("cat", cid), "count": len(shown)})
             for _iid, name, price, unit, _stk in shown:
                 sub = f"{fmt_money(price)}/{unit}"
                 if name.strip() in stock:
@@ -158,7 +179,9 @@ class EstimateView(ctk.CTkFrame):
                     "title": name, "sub": sub, "on_click": add,
                     "buttons": [{"text": "+", "fill": ACCENT,
                                  "text_color": "#ffffff", "cb": add}]})
-        self.cat_list.set_rows(rows, keep_scroll=keep_scroll)
+        self.cat_list.set_rows(rows, keep_scroll=keep_scroll,
+                               expand_all=bool(query))
+        self._sync_cat_toggle()
 
     def new_catalog_item(self):
         """Завести позицию каталога, не уходя со сметы — сразу ставим её в день."""
@@ -772,6 +795,11 @@ class CatalogView(ctk.CTkFrame):
                                        placeholder_text="Поиск…")
         self.cat_search.pack(side="right", padx=8)
         self.cat_search.bind("<KeyRelease>", lambda e: self.refresh(keep_scroll=True))
+        self.cat_toggle = ctk.CTkButton(row1, text="свернуть все", width=110, height=32,
+                                        fg_color=CARD, hover_color=CARD_HOVER,
+                                        text_color=MUTED, font=(UI_FONT, 12),
+                                        command=self._toggle_all_categories)
+        self.cat_toggle.pack(side="right", padx=4)
 
         row2 = ctk.CTkFrame(head, fg_color="transparent")
         row2.pack(fill="x", padx=12, pady=(4, 10))
@@ -805,9 +833,20 @@ class CatalogView(ctk.CTkFrame):
 
         self.list = FastList(
             self, empty_text="Каталог пуст — нажмите «+ Позиция», чтобы завести\n"
-                             "первую позицию вручную, или импортируйте прайс из Excel")
+                             "первую позицию вручную, или импортируйте прайс из Excel",
+            on_collapse=self._sync_cat_toggle)
         self.list.pack(fill="both", expand=True)
         self.refresh()
+
+    def _toggle_all_categories(self):
+        self.list.set_all_collapsed(not self.list.all_collapsed())
+
+    def _sync_cat_toggle(self):
+        searching = bool(self.cat_search.get().strip())
+        collapsed = self.list.all_collapsed() and not searching
+        self.cat_toggle.configure(
+            state="disabled" if searching else "normal",
+            text="развернуть все" if collapsed else "свернуть все")
 
     def refresh(self, keep_scroll=False):
         query = self.cat_search.get().strip().lower() if hasattr(self, "cat_search") else ""
@@ -818,6 +857,7 @@ class CatalogView(ctk.CTkFrame):
                 continue
             rows.append({
                 "header": cname.upper(), "color": ACCENT,
+                "key": ("cat", cid), "count": len(shown),
                 "buttons": [
                     {"text": "✕", "text_color": MUTED,
                      "cb": lambda i=cid, n=cname: self._delete_category(i, n)},
@@ -842,7 +882,8 @@ class CatalogView(ctk.CTkFrame):
                              "buttons": [
                                  {"text": "✕", "text_color": MUTED,
                                   "cb": lambda i=iid, n=name: self._delete_item(i, n)}]})
-        self.list.set_rows(rows, keep_scroll=keep_scroll)
+        self.list.set_rows(rows, keep_scroll=keep_scroll, expand_all=bool(query))
+        self._sync_cat_toggle()
 
     def _reload(self):
         """Каталог правится в двух местах — обновляем оба списка."""
@@ -1016,14 +1057,106 @@ class SettingsView(ctk.CTkFrame):
                       hover_color=ACCENT_DIM, font=(UI_FONT, 14, "bold"),
                       height=36, width=160, command=self._save
                       ).pack(anchor="w", padx=20, pady=(16, 4))
-        self.saved_lbl.pack(anchor="w", padx=20, pady=(0, 8))
-        logo_state = "найден ✓" if paths.logo_path() else "не найден"
-        ctk.CTkLabel(panel,
-                     text=f"Логотип: положите файл logo.png в папку данных ({logo_state}). База данных: crm.db там же:\n{paths.data_dir()}",
+        self.saved_lbl.pack(anchor="w", padx=20, pady=(0, 16))
+
+        self._build_logo()
+
+        ctk.CTkLabel(self,
+                     text=f"База данных: crm.db в папке {paths.data_dir()}",
                      text_color=MUTED, font=(UI_FONT, 11), justify="left"
-                     ).pack(anchor="w", padx=20, pady=(4, 16))
+                     ).pack(anchor="w", padx=6, pady=(12, 0))
         ctk.CTkLabel(self, text="by bisquare", text_color=MUTED,
                      font=(UI_FONT, 10)).pack(side="bottom", anchor="w", padx=6, pady=4)
+
+    def _build_logo(self):
+        panel = ctk.CTkFrame(self, fg_color=PANEL, corner_radius=12)
+        panel.pack(fill="x", pady=(12, 0))
+        ctk.CTkLabel(panel, text="Логотип", font=(UI_FONT, 15, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=20, pady=(16, 2))
+        ctk.CTkLabel(panel, text="Появляется в шапке сметы в Excel и PDF.",
+                     text_color=MUTED, font=(UI_FONT, 12)).pack(anchor="w", padx=20)
+
+        self.logo_box = ctk.CTkFrame(panel, fg_color="transparent")
+        self.logo_box.pack(anchor="w", padx=20, pady=(10, 0))
+        self.logo_preview = ctk.CTkLabel(self.logo_box, text="")
+        self.logo_hint = ctk.CTkLabel(self.logo_box, text="логотип не загружен",
+                                      text_color=MUTED, font=(UI_FONT, 12))
+        self._logo_img = None
+
+        btns = ctk.CTkFrame(panel, fg_color="transparent")
+        btns.pack(anchor="w", padx=16, pady=(10, 16))
+        self.logo_btn = ctk.CTkButton(btns, text="Загрузить", fg_color=CARD,
+                                      hover_color=CARD_HOVER, font=(UI_FONT, 13),
+                                      height=32, width=120, command=self._pick_logo)
+        self.logo_btn.pack(side="left", padx=4)
+        self.logo_del_btn = ctk.CTkButton(btns, text="Убрать", fg_color=CARD,
+                                          hover_color=CARD_HOVER, text_color=RED,
+                                          font=(UI_FONT, 13), height=32, width=100,
+                                          command=self._remove_logo)
+        self._refresh_logo()
+
+    def _refresh_logo(self):
+        path = paths.logo_path()
+        self._logo_img = None
+        if path:
+            try:
+                from PIL import Image
+                img = Image.open(path)
+                img.load()
+                k = min(PREVIEW_W / img.width, PREVIEW_H / img.height, 1.0)
+                size = (max(int(img.width * k), 1), max(int(img.height * k), 1))
+                self._logo_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
+            except Exception:
+                self._logo_img = None
+        if self._logo_img is not None:
+            self.logo_hint.pack_forget()
+            self.logo_preview.configure(image=self._logo_img)
+            self.logo_preview.pack(anchor="w")
+            self.logo_btn.configure(text="Заменить")
+            self.logo_del_btn.pack(side="left", padx=4)
+        else:
+            # CTkLabel.configure(image=None) картинку не убирает — прячем сам виджет
+            self.logo_preview.pack_forget()
+            self.logo_hint.pack(anchor="w")
+            self.logo_btn.configure(text="Загрузить")
+            self.logo_del_btn.pack_forget()
+
+    def _pick_logo(self):
+        path = filedialog.askopenfilename(
+            title="Логотип",
+            filetypes=[("Изображения", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                       ("Все файлы", "*.*")])
+        if not path:
+            return
+        try:
+            from PIL import Image
+            img = Image.open(path)
+            img.load()
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            if img.height > MAX_LOGO_H:
+                k = MAX_LOGO_H / img.height
+                img = img.resize((max(int(img.width * k), 1), MAX_LOGO_H),
+                                 Image.LANCZOS)
+            target = paths.logo_file()
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            img.save(target, "PNG")
+        except Exception as exc:
+            messagebox.showerror("Логотип", f"Не удалось прочитать изображение:\n{exc}")
+            return
+        self._refresh_logo()
+
+    def _remove_logo(self):
+        if not messagebox.askyesno("Логотип", "Убрать логотип из шапки сметы?"):
+            return
+        try:
+            paths.remove_logo()
+        except OSError as exc:
+            messagebox.showerror("Логотип", f"Не удалось удалить файл:\n{exc}")
+        self._refresh_logo()
+
+    def on_show(self):
+        self._refresh_logo()
 
     def _save(self):
         for key, entry in self.entries.items():

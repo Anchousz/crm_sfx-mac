@@ -26,11 +26,11 @@ $PY -m PyInstaller --noconfirm --clean --windowed --name "SFX CRM" \
     --add-data "assets:assets" --osx-bundle-identifier ru.bisquare.sfxcrm app.py
 
 # Создание .dmg
-rm -rf build/dmg "installer/SFX-CRM-3.1.0.dmg"
+rm -rf build/dmg "installer/SFX-CRM-3.2.0.dmg"
 mkdir -p build/dmg installer
 cp -R "dist/SFX CRM.app" build/dmg/
 ln -s /Applications build/dmg/Applications
 hdiutil create -volname "SFX CRM" -srcfolder build/dmg -ov -format UDZO \
-    "installer/SFX-CRM-3.1.0.dmg"
+    "installer/SFX-CRM-3.2.0.dmg"
 
-echo "Готово: installer/SFX-CRM-3.1.0.dmg"
+echo "Готово: installer/SFX-CRM-3.2.0.dmg"

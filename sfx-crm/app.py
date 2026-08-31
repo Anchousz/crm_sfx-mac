@@ -63,7 +63,7 @@ except Exception:
 
 ctk.set_appearance_mode("dark")
 
-VERSION = "3.1"
+VERSION = "3.2"
 
 NAV = [("estimate", "Смета"),
        ("projects", "Проекты"),
